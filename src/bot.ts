@@ -1,0 +1,136 @@
+import { Bot, Context } from 'grammy';
+import { config } from './config.js';
+import { addTask, getTasks, getTaskByNumber, deleteTask, Task } from './database.js';
+import { analyzeReply } from './ai.js';
+
+const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
+
+export const bot = new Bot(config.telegram.botToken);
+
+// /start command
+bot.command('start', async (ctx) => {
+  await ctx.reply(
+    'Task Bot\n\n' +
+    'Commands:\n' +
+    '/add <task> - Add a new task\n' +
+    '/task - Show all tasks\n' +
+    '/done <number> - Delete task by number'
+  );
+});
+
+// /add command - add a new task
+bot.command('add', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const text = ctx.message?.text || '';
+  const description = text.replace(/^\/add\s*/, '').trim();
+
+  if (!description) {
+    await ctx.reply('Please provide a task description.\nExample: /add Prepare presentation');
+    return;
+  }
+
+  const task = addTask(chatId, description);
+  await ctx.reply(`Task added: ${task.description}`);
+});
+
+// /task command - show all tasks
+bot.command('task', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const tasks = getTasks(chatId);
+
+  if (tasks.length === 0) {
+    await ctx.reply('No tasks yet. Use /add to create one.');
+    return;
+  }
+
+  const message = formatTaskList(tasks);
+  await ctx.reply(message);
+});
+
+// /done command - delete task by number
+bot.command('done', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const text = ctx.message?.text || '';
+  const numberStr = text.replace(/^\/done\s*/, '').trim();
+  const taskNumber = parseInt(numberStr, 10);
+
+  if (isNaN(taskNumber) || taskNumber < 1) {
+    await ctx.reply('Please provide a valid task number.\nExample: /done 1');
+    return;
+  }
+
+  const task = getTaskByNumber(chatId, taskNumber);
+  if (!task) {
+    await ctx.reply(`Task #${taskNumber} not found.`);
+    return;
+  }
+
+  deleteTask(task.id);
+  await ctx.reply(`Task deleted: ${task.description}`);
+});
+
+// Handle replies to bot messages (AI analysis)
+bot.on('message:text', async (ctx) => {
+  const replyTo = ctx.message.reply_to_message;
+
+  // Check if this is a reply to the bot's message
+  if (!replyTo || replyTo.from?.id !== ctx.me.id) {
+    return;
+  }
+
+  // Check if OpenAI is configured
+  if (!config.openai.apiKey) {
+    return;
+  }
+
+  const chatId = ctx.chat.id;
+  const userMessage = ctx.message.text;
+  const tasks = getTasks(chatId);
+
+  if (tasks.length === 0) {
+    return;
+  }
+
+  try {
+    const result = await analyzeReply(userMessage, tasks);
+
+    if (result.taskNumber && result.shouldComplete) {
+      const task = getTaskByNumber(chatId, result.taskNumber);
+      if (task) {
+        deleteTask(task.id);
+        await ctx.reply(`Task completed: ${task.description}`);
+      }
+    }
+  } catch (error) {
+    console.error('AI analysis error:', error);
+    // Silently fail - don't interrupt user experience
+  }
+});
+
+export function formatTaskList(tasks: Task[]): string {
+  let message = 'Open tasks:\n\n';
+
+  for (let i = 0; i < tasks.length; i++) {
+    const line = `${i + 1}. ${tasks[i].description}\n`;
+
+    if (message.length + line.length > MAX_MESSAGE_LENGTH) {
+      message += `\n... and ${tasks.length - i} more tasks`;
+      break;
+    }
+
+    message += line;
+  }
+
+  return message;
+}
+
+export async function sendTasksToChat(chatId: number): Promise<void> {
+  const tasks = getTasks(chatId);
+
+  if (tasks.length === 0) {
+    return; // Don't send if no tasks
+  }
+
+  const message = formatTaskList(tasks);
+  await bot.api.sendMessage(chatId, message);
+}
