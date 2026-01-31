@@ -4,8 +4,17 @@ import { addTask, getTasks, getTaskByNumber, deleteTask, Task } from './database
 import { analyzeReply } from './ai.js';
 
 const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
+const OVERDUE_HOURS = 24; // Task is overdue after 24 hours
 
 export const bot = new Bot(config.telegram.botToken);
+
+// Check if task is overdue (older than 24 hours)
+function isOverdue(task: Task): boolean {
+  const createdAt = new Date(task.created_at);
+  const now = new Date();
+  const hoursDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+  return hoursDiff > OVERDUE_HOURS;
+}
 
 // /start command
 bot.command('start', async (ctx) => {
@@ -44,7 +53,7 @@ bot.command('task', async (ctx) => {
   }
 
   const message = formatTaskList(tasks);
-  await ctx.reply(message);
+  await ctx.reply(message, { parse_mode: 'MarkdownV2' });
 });
 
 // /done command - delete task by number
@@ -65,8 +74,17 @@ bot.command('done', async (ctx) => {
     return;
   }
 
+  const overdue = isOverdue(task);
   deleteTask(task.id);
-  await ctx.reply(`Task deleted: ${task.description}`);
+
+  // React with different emoji based on whether task was overdue
+  try {
+    await ctx.react(overdue ? '🔥' : '😎');
+  } catch (e) {
+    // Reactions might not be available in all chats
+  }
+
+  await ctx.reply(`Task completed: ${task.description}`);
 });
 
 // Handle replies to bot messages (AI analysis)
@@ -108,10 +126,17 @@ bot.on('message:text', async (ctx) => {
 });
 
 export function formatTaskList(tasks: Task[]): string {
-  let message = 'Open tasks:\n\n';
+  let message = '📋 *Open tasks:*\n\n';
 
   for (let i = 0; i < tasks.length; i++) {
-    const line = `${i + 1}. ${tasks[i].description}\n`;
+    const task = tasks[i];
+    const num = i + 1;
+    const overdue = isOverdue(task);
+
+    // Bold number always, bold description only if overdue
+    const line = overdue
+      ? `*${num}.* *${escapeMarkdown(task.description)}*\n`
+      : `*${num}.* ${escapeMarkdown(task.description)}\n`;
 
     if (message.length + line.length > MAX_MESSAGE_LENGTH) {
       message += `\n... and ${tasks.length - i} more tasks`;
@@ -124,6 +149,11 @@ export function formatTaskList(tasks: Task[]): string {
   return message;
 }
 
+// Escape special Markdown characters
+function escapeMarkdown(text: string): string {
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
 export async function sendTasksToChat(chatId: number): Promise<void> {
   const tasks = getTasks(chatId);
 
@@ -132,5 +162,5 @@ export async function sendTasksToChat(chatId: number): Promise<void> {
   }
 
   const message = formatTaskList(tasks);
-  await bot.api.sendMessage(chatId, message);
+  await bot.api.sendMessage(chatId, message, { parse_mode: 'MarkdownV2' });
 }
