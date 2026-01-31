@@ -126,7 +126,7 @@ bot.on('message:text', async (ctx) => {
 });
 
 export function formatTaskList(tasks: Task[]): string {
-  let message = '📋 <b>Open tasks:</b>\n\n';
+  let message = '<b>Open tasks:</b>\n\n';
 
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
