@@ -53,7 +53,7 @@ bot.command('task', async (ctx) => {
   }
 
   const message = formatTaskList(tasks);
-  await ctx.reply(message, { parse_mode: 'MarkdownV2' });
+  await ctx.reply(message, { parse_mode: 'HTML' });
 });
 
 // /done command - delete task by number
@@ -126,17 +126,18 @@ bot.on('message:text', async (ctx) => {
 });
 
 export function formatTaskList(tasks: Task[]): string {
-  let message = '📋 *Open tasks:*\n\n';
+  let message = '📋 <b>Open tasks:</b>\n\n';
 
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
     const num = i + 1;
     const overdue = isOverdue(task);
+    const desc = escapeHtml(task.description);
 
     // Bold number always, bold description only if overdue
     const line = overdue
-      ? `*${num}.* *${escapeMarkdown(task.description)}*\n`
-      : `*${num}.* ${escapeMarkdown(task.description)}\n`;
+      ? `<b>${num}.</b> <b>${desc}</b>\n`
+      : `<b>${num}.</b> ${desc}\n`;
 
     if (message.length + line.length > MAX_MESSAGE_LENGTH) {
       message += `\n... and ${tasks.length - i} more tasks`;
@@ -149,9 +150,12 @@ export function formatTaskList(tasks: Task[]): string {
   return message;
 }
 
-// Escape special Markdown characters
-function escapeMarkdown(text: string): string {
-  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+// Escape HTML special characters
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 export async function sendTasksToChat(chatId: number): Promise<void> {
@@ -162,5 +166,5 @@ export async function sendTasksToChat(chatId: number): Promise<void> {
   }
 
   const message = formatTaskList(tasks);
-  await bot.api.sendMessage(chatId, message, { parse_mode: 'MarkdownV2' });
+  await bot.api.sendMessage(chatId, message, { parse_mode: 'HTML' });
 }
