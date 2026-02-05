@@ -6,6 +6,22 @@ import { generateSarcasticMessage, generateSarcasticReply } from './gemini.js';
 const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
 const OVERDUE_HOURS = 24; // Task is overdue after 24 hours
 
+// Fallback sarcastic phrases when Gemini is unavailable
+const FALLBACK_REPLIES = [
+  'Ага, услышала тебя 💅',
+  'Ну и что ты хотел этим сказать? 🙄',
+  'Окей, записала в игнор 💀',
+  'Серьёзно? Это всё что ты можешь? 😏',
+  'Мне прям так интересно, аж зеваю 🙄',
+  'Вау, какой содержательный ответ 💅',
+  'Ладно, допустим я это прочитала 😤',
+  'Ты думал это меня впечатлит? 💀',
+];
+
+function getRandomFallback(): string {
+  return FALLBACK_REPLIES[Math.floor(Math.random() * FALLBACK_REPLIES.length)];
+}
+
 export const bot = new Bot(config.telegram.botToken);
 
 // Check if task is overdue (older than 24 hours)
@@ -147,7 +163,7 @@ bot.on('message:text', async (ctx) => {
   // Check if Gemini is configured
   if (!config.gemini.apiKey) {
     console.log('Gemini API key not configured');
-    await ctx.reply('Ага, услышала тебя 💅');
+    await ctx.reply(getRandomFallback());
     return;
   }
 
@@ -173,11 +189,11 @@ bot.on('message:text', async (ctx) => {
       await ctx.reply(result.reply);
     } else {
       // Fallback if Gemini returns nothing
-      await ctx.reply('Ну и что ты хотел этим сказать? 🙄');
+      await ctx.reply(getRandomFallback());
     }
   } catch (error) {
     console.error('Gemini reply error:', error);
-    await ctx.reply('Технические проблемы, но я всё равно тебя осуждаю 💀');
+    await ctx.reply(getRandomFallback());
   }
 });
 
