@@ -19,7 +19,11 @@ export async function generateSarcasticMessage(): Promise<string | null> {
 }
 
 export async function generateSarcasticReply(userMessage: string, tasks: string[]): Promise<{ reply: string; taskNumber?: number } | null> {
+  console.log('generateSarcasticReply called');
+  console.log('OpenAI API key present:', !!config.openai.apiKey);
+
   if (!config.openai.apiKey) {
+    console.log('No OpenAI API key, returning null');
     return null;
   }
 
@@ -62,6 +66,8 @@ ${tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}
       }),
     });
 
+    console.log('OpenAI response status:', response.status);
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('OpenAI API error:', response.status, errorText);
@@ -69,6 +75,7 @@ ${tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}
     }
 
     const data = await response.json();
+    console.log('OpenAI response data:', JSON.stringify(data).slice(0, 500));
     const text = data.choices?.[0]?.message?.content?.trim();
 
     if (text) {
