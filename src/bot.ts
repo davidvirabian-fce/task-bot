@@ -131,16 +131,23 @@ bot.on('message:text', async (ctx) => {
     return;
   }
 
-  // Check if Gemini is configured
-  if (!config.gemini.apiKey) {
-    return;
-  }
+  console.log('Received reply to bot message:', ctx.message.text);
 
   const chatId = ctx.chat.id;
   const userMessage = ctx.message.text;
   const tasks = getTasks(chatId);
 
+  console.log(`Chat ${chatId} has ${tasks.length} tasks`);
+
   if (tasks.length === 0) {
+    await ctx.reply('Задач нет, а ты тут болтаешь 🙄');
+    return;
+  }
+
+  // Check if Gemini is configured
+  if (!config.gemini.apiKey) {
+    console.log('Gemini API key not configured');
+    await ctx.reply('Ага, услышала тебя 💅');
     return;
   }
 
@@ -150,20 +157,27 @@ bot.on('message:text', async (ctx) => {
       tasks.map(t => t.description)
     );
 
+    console.log('Gemini result:', result);
+
     if (result) {
       // If task completion detected, delete the task
       if (result.taskNumber) {
         const task = getTaskByNumber(chatId, result.taskNumber);
         if (task) {
           deleteTask(task.id);
+          console.log(`Deleted task ${result.taskNumber}`);
         }
       }
 
       // Always reply with sarcastic message
       await ctx.reply(result.reply);
+    } else {
+      // Fallback if Gemini returns nothing
+      await ctx.reply('Ну и что ты хотел этим сказать? 🙄');
     }
   } catch (error) {
     console.error('Gemini reply error:', error);
+    await ctx.reply('Технические проблемы, но я всё равно тебя осуждаю 💀');
   }
 });
 
