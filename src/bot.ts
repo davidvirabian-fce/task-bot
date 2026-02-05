@@ -1,7 +1,7 @@
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
 import { addTask, getTasks, getTaskByNumber, deleteTask, deleteAllTasks, Task } from './database.js';
-import { generateSarcasticMessage, generateSarcasticReply } from './gemini.js';
+import { generateSarcasticMessage, generateSarcasticReply } from './openai.js';
 
 const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
 const OVERDUE_HOURS = 24; // Task is overdue after 24 hours
@@ -160,9 +160,9 @@ bot.on('message:text', async (ctx) => {
     return;
   }
 
-  // Check if Gemini is configured
-  if (!config.gemini.apiKey) {
-    console.log('Gemini API key not configured');
+  // Check if OpenAI is configured
+  if (!config.openai.apiKey) {
+    console.log('OpenAI API key not configured');
     await ctx.reply(getRandomFallback());
     return;
   }
@@ -173,7 +173,7 @@ bot.on('message:text', async (ctx) => {
       tasks.map(t => t.description)
     );
 
-    console.log('Gemini result:', result);
+    console.log('OpenAI result:', result);
 
     if (result) {
       // If task completion detected, delete the task
@@ -192,7 +192,7 @@ bot.on('message:text', async (ctx) => {
       await ctx.reply(getRandomFallback());
     }
   } catch (error) {
-    console.error('Gemini reply error:', error);
+    console.error('OpenAI reply error:', error);
     await ctx.reply(getRandomFallback());
   }
 });

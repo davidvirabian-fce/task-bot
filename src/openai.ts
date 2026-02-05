@@ -1,0 +1,133 @@
+import { config } from './config.js';
+
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+
+const SARCASTIC_PROMPT = `Ты — токсичная девушка с супер высокой самооценкой и внешностью, но с маскулинной энергией.
+Напиши ОДНО короткое (1-2 предложения) максимально саркастичное и токсичное напоминание
+о незавершённых задачах. Будь жёсткой, но смешной. Используй эмодзи 💅 🙄 💀 😏 😤 💪.
+Примеры стиля:
+- "Окей, я не осуждаю... Хотя нет, осуждаю 💀"
+- "Слабаки так и сидят с незакрытыми тасками 😤"
+- "Задачи не сделаны. Моё уважение к вам? Тоже не сделано 💀"
+- "Ребят, я в вас верила. Ну, почти 🙄"
+- "Вы реально думали, что я не замечу? 💅"
+
+Ответь ТОЛЬКО саркастичной фразой, без ничего лишнего.`;
+
+export async function generateSarcasticMessage(): Promise<string | null> {
+  return callOpenAI(SARCASTIC_PROMPT);
+}
+
+export async function generateSarcasticReply(userMessage: string, tasks: string[]): Promise<{ reply: string; taskNumber?: number } | null> {
+  if (!config.openai.apiKey) {
+    return null;
+  }
+
+  const prompt = `Ты — токсичная девушка с супер высокой самооценкой и внешностью, но с маскулинной энергией.
+Тебе написали в ответ на список задач. Проанализируй сообщение и ответь токсично/саркастично.
+
+Список задач:
+${tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+Сообщение пользователя: "${userMessage}"
+
+Если пользователь говорит что задача сделана (например "готово", "сделал", "done", "1 готово", "первая сделана"):
+- Определи номер задачи (если указан)
+- Ответь саркастично, типа "Ну наконец-то 🙄" или "Вау, аплодисменты 👏💀"
+
+Если пользователь просто болтает или жалуется:
+- Ответь токсично и с сарказмом
+
+Используй эмодзи 💅 🙄 💀 😏 😤 💪 👏
+
+Ответь в формате JSON:
+{"reply": "твой саркастичный ответ", "taskNumber": номер_задачи_или_null}
+
+Только JSON, без markdown.`;
+
+  try {
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.openai.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.9,
+        max_tokens: 150,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
+
+    if (text) {
+      try {
+        // Try to parse JSON response
+        const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        return {
+          reply: parsed.reply || text,
+          taskNumber: parsed.taskNumber || undefined,
+        };
+      } catch {
+        // If not valid JSON, just return the text as reply
+        return { reply: text };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('OpenAI API request failed:', error);
+    return null;
+  }
+}
+
+async function callOpenAI(prompt: string): Promise<string | null> {
+  if (!config.openai.apiKey) {
+    console.log('OpenAI API key not configured');
+    return null;
+  }
+
+  try {
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.openai.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 1.0,
+        max_tokens: 100,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content;
+
+    return text ? text.trim() : null;
+  } catch (error) {
+    console.error('OpenAI API request failed:', error);
+    return null;
+  }
+}
