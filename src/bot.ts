@@ -1,7 +1,8 @@
-import { Bot, Context } from 'grammy';
+import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
-import { addTask, getTasks, getTaskByNumber, deleteTask, Task } from './database.js';
+import { addTask, getTasks, getTaskByNumber, deleteTask, deleteAllTasks, Task } from './database.js';
 import { analyzeReply } from './ai.js';
+import { generateSarcasticMessage } from './gemini.js';
 
 const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
 const OVERDUE_HOURS = 24; // Task is overdue after 24 hours
@@ -23,7 +24,8 @@ bot.command('start', async (ctx) => {
     'Commands:\n' +
     '/add <task> - Add a new task\n' +
     '/task - Show all tasks\n' +
-    '/done <number> - Delete task by number'
+    '/done <number> - Complete task by number\n' +
+    '/clearall - Delete all tasks'
   );
 });
 
@@ -38,8 +40,12 @@ bot.command('add', async (ctx) => {
     return;
   }
 
-  const task = addTask(chatId, description);
-  await ctx.reply(`Task added: ${task.description}`);
+  addTask(chatId, description);
+  try {
+    await ctx.react('👀');
+  } catch (e) {
+    // Reactions might not be available in all chats
+  }
 });
 
 // /task command - show all tasks
@@ -74,17 +80,47 @@ bot.command('done', async (ctx) => {
     return;
   }
 
-  const overdue = isOverdue(task);
   deleteTask(task.id);
-
-  // React with different emoji based on whether task was overdue
   try {
-    await ctx.react(overdue ? '🔥' : '😎');
+    await ctx.react('😎');
   } catch (e) {
     // Reactions might not be available in all chats
   }
+});
 
-  await ctx.reply(`Task completed: ${task.description}`);
+// /clearall command - delete all tasks with confirmation
+bot.command('clearall', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const tasks = getTasks(chatId);
+
+  if (tasks.length === 0) {
+    await ctx.reply('No tasks to delete.');
+    return;
+  }
+
+  const keyboard = new InlineKeyboard()
+    .text('Yes, delete all', `clearall_confirm_${chatId}`)
+    .text('Cancel', 'clearall_cancel');
+
+  await ctx.reply(
+    `Are you sure you want to delete all ${tasks.length} tasks?`,
+    { reply_markup: keyboard }
+  );
+});
+
+// Handle clearall confirmation
+bot.callbackQuery(/^clearall_confirm_(\d+)$/, async (ctx) => {
+  const chatId = parseInt(ctx.match![1], 10);
+  const deleted = deleteAllTasks(chatId);
+
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(`Deleted ${deleted} tasks.`);
+});
+
+// Handle clearall cancel
+bot.callbackQuery('clearall_cancel', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText('Cancelled.');
 });
 
 // Handle replies to bot messages (AI analysis)
@@ -167,4 +203,17 @@ export async function sendTasksToChat(chatId: number): Promise<void> {
 
   const message = formatTaskList(tasks);
   await bot.api.sendMessage(chatId, message, { parse_mode: 'HTML' });
+}
+
+export async function sendSarcasticMessage(chatId: number): Promise<void> {
+  const tasks = getTasks(chatId);
+
+  if (tasks.length === 0) {
+    return; // Don't send if no tasks
+  }
+
+  const sarcasticText = await generateSarcasticMessage();
+  if (sarcasticText) {
+    await bot.api.sendMessage(chatId, sarcasticText);
+  }
 }

@@ -68,6 +68,12 @@ export function deleteTask(taskId: number): boolean {
   return result.changes > 0;
 }
 
+export function deleteAllTasks(chatId: number): number {
+  const stmt = db.prepare(`DELETE FROM tasks WHERE chat_id = ?`);
+  const result = stmt.run(chatId);
+  return result.changes;
+}
+
 export function getAllChatsWithTasks(): number[] {
   const stmt = db.prepare(`
     SELECT DISTINCT chat_id FROM tasks
