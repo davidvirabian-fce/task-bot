@@ -1,26 +1,11 @@
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
-import { addTask, getTasks, getTaskByNumber, deleteTask, deleteAllTasks, Task } from './database.js';
-import { generateSarcasticMessage, generateSarcasticReply } from './openai.js';
+import { addTask, getTasks, getTaskByNumber, deleteTask, deleteAllTasks, Task, incrementMessageCount } from './database.js';
+import { generateSarcasticMessage } from './openai.js';
 
 const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
 const OVERDUE_HOURS = 24; // Task is overdue after 24 hours
-
-// Fallback phrases when AI is unavailable
-const FALLBACK_REPLIES = [
-  'Чё? Говори нормально 😤',
-  'Это всё на что ты способен? 🤡',
-  'Слабо. Очень слабо 💀',
-  'Яйца есть — мозгов нет 🥚🥚',
-  'Ты серьёзно сейчас? 😤',
-  'Позор какой-то 💀',
-  'Давай без этой хуйни 👊',
-  'Соберись, тряпка 🔥',
-];
-
-function getRandomFallback(): string {
-  return FALLBACK_REPLIES[Math.floor(Math.random() * FALLBACK_REPLIES.length)];
-}
+const MESSAGE_THRESHOLD = 20; // "Распизделись" trigger threshold
 
 export const bot = new Bot(config.telegram.botToken);
 
@@ -138,62 +123,22 @@ bot.callbackQuery('clearall_cancel', async (ctx) => {
   await ctx.editMessageText('Cancelled.');
 });
 
-// Handle replies to bot messages (toxic AI response via Gemini)
+// Track all messages and trigger "Распизделись" at 20+ per hour
 bot.on('message:text', async (ctx) => {
-  const replyTo = ctx.message.reply_to_message;
-
-  // Check if this is a reply to the bot's message
-  if (!replyTo || replyTo.from?.id !== ctx.me.id) {
-    return;
-  }
-
-  console.log('Received reply to bot message:', ctx.message.text);
-
   const chatId = ctx.chat.id;
-  const userMessage = ctx.message.text;
-  const tasks = getTasks(chatId);
 
-  console.log(`Chat ${chatId} has ${tasks.length} tasks`);
-
-  if (tasks.length === 0) {
-    await ctx.reply('Задач нет, а ты тут болтаешь 🙄');
+  // Don't count bot commands
+  if (ctx.message.text.startsWith('/')) {
     return;
   }
 
-  // Check if OpenAI is configured
-  if (!config.openai.apiKey) {
-    console.log('OpenAI API key not configured');
-    await ctx.reply(getRandomFallback());
-    return;
-  }
+  // Increment message count and check threshold
+  const count = incrementMessageCount(chatId);
+  console.log(`Chat ${chatId} message count this hour: ${count}`);
 
-  try {
-    const result = await generateSarcasticReply(
-      userMessage,
-      tasks.map(t => t.description)
-    );
-
-    console.log('OpenAI result:', result);
-
-    if (result) {
-      // If task completion detected, delete the task
-      if (result.taskNumber) {
-        const task = getTaskByNumber(chatId, result.taskNumber);
-        if (task) {
-          deleteTask(task.id);
-          console.log(`Deleted task ${result.taskNumber}`);
-        }
-      }
-
-      // Always reply with sarcastic message
-      await ctx.reply(result.reply);
-    } else {
-      // Fallback if Gemini returns nothing
-      await ctx.reply(getRandomFallback());
-    }
-  } catch (error) {
-    console.error('OpenAI reply error:', error);
-    await ctx.reply(getRandomFallback());
+  // Trigger "Распизделись" exactly at 20 messages
+  if (count === MESSAGE_THRESHOLD) {
+    await ctx.reply('Распизделись');
   }
 });
 
