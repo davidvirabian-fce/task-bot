@@ -1,8 +1,7 @@
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
 import { addTask, getTasks, getTaskByNumber, deleteTask, deleteAllTasks, Task } from './database.js';
-import { analyzeReply } from './ai.js';
-import { generateSarcasticMessage } from './gemini.js';
+import { generateSarcasticMessage, generateSarcasticReply } from './gemini.js';
 
 const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
 const OVERDUE_HOURS = 24; // Task is overdue after 24 hours
@@ -123,7 +122,7 @@ bot.callbackQuery('clearall_cancel', async (ctx) => {
   await ctx.editMessageText('Cancelled.');
 });
 
-// Handle replies to bot messages (AI analysis)
+// Handle replies to bot messages (toxic AI response via Gemini)
 bot.on('message:text', async (ctx) => {
   const replyTo = ctx.message.reply_to_message;
 
@@ -132,8 +131,8 @@ bot.on('message:text', async (ctx) => {
     return;
   }
 
-  // Check if OpenAI is configured
-  if (!config.openai.apiKey) {
+  // Check if Gemini is configured
+  if (!config.gemini.apiKey) {
     return;
   }
 
@@ -146,18 +145,25 @@ bot.on('message:text', async (ctx) => {
   }
 
   try {
-    const result = await analyzeReply(userMessage, tasks);
+    const result = await generateSarcasticReply(
+      userMessage,
+      tasks.map(t => t.description)
+    );
 
-    if (result.taskNumber && result.shouldComplete) {
-      const task = getTaskByNumber(chatId, result.taskNumber);
-      if (task) {
-        deleteTask(task.id);
-        await ctx.reply(`Task completed: ${task.description}`);
+    if (result) {
+      // If task completion detected, delete the task
+      if (result.taskNumber) {
+        const task = getTaskByNumber(chatId, result.taskNumber);
+        if (task) {
+          deleteTask(task.id);
+        }
       }
+
+      // Always reply with sarcastic message
+      await ctx.reply(result.reply);
     }
   } catch (error) {
-    console.error('AI analysis error:', error);
-    // Silently fail - don't interrupt user experience
+    console.error('Gemini reply error:', error);
   }
 });
 
