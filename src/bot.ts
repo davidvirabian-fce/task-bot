@@ -1,11 +1,23 @@
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
-import { addTask, getTasks, getTaskByNumber, deleteTask, deleteAllTasks, Task, incrementMessageCount } from './database.js';
+import { addTask, getTasks, getTaskByNumber, deleteTask, deleteAllTasks, Task, incrementMessageCount, saveDemoPoll, saveDemoPollAnswer, isDemoPoll } from './database.js';
 import { generateSarcasticMessage } from './openai.js';
 
 const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer for Telegram's 4096 limit
 const OVERDUE_HOURS = 24; // Task is overdue after 24 hours
 const MESSAGE_THRESHOLD = 20; // "Распизделись" trigger threshold
+
+const DEMO_POLL_QUESTION = '🔞 FCE Demo Checklist';
+const DEMO_POLL_OPTIONS = [
+  'SumSub — KYC/KYB проверки работают',
+  'Zand — счета создаются и активируются',
+  'Fireblocks — кошельки создаются и активируются',
+  'Twilio — SMS приходят',
+  'Crassula API — платформа доступна',
+  'Email — уведомления отправляются',
+  'IBAN/Address Whitelisting — работает',
+  'Risk Score — отображается в backoffice',
+];
 
 export const bot = new Bot(config.telegram.botToken);
 
@@ -25,7 +37,8 @@ bot.command('start', async (ctx) => {
     '/add <task> - Add a new task\n' +
     '/task - Show all tasks\n' +
     '/done <number> - Complete task by number\n' +
-    '/clearall - Delete all tasks'
+    '/clearall - Delete all tasks\n' +
+    '/demo - FCE Architecture demo checklist'
   );
 });
 
@@ -121,6 +134,43 @@ bot.callbackQuery(/^clearall_confirm_(\d+)$/, async (ctx) => {
 bot.callbackQuery('clearall_cancel', async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.editMessageText('Cancelled.');
+});
+
+// /demo command - create FCE Architecture demo checklist poll
+bot.command('demo', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const userId = ctx.from?.id;
+
+  const result = await ctx.replyWithPoll(
+    DEMO_POLL_QUESTION,
+    DEMO_POLL_OPTIONS,
+    {
+      is_anonymous: false,
+      allows_multiple_answers: true,
+    }
+  );
+
+  saveDemoPoll(chatId, result.poll.id, userId || 0);
+});
+
+// Handle poll_answer events for demo polls
+bot.on('poll_answer', async (ctx) => {
+  const pollAnswer = ctx.pollAnswer;
+  if (!pollAnswer) return;
+
+  const pollId = pollAnswer.poll_id;
+  if (!isDemoPoll(pollId)) return;
+
+  const user = pollAnswer.user;
+  if (!user) return;
+
+  saveDemoPollAnswer(
+    pollId,
+    user.id,
+    user.first_name || '',
+    user.username || '',
+    pollAnswer.option_ids
+  );
 });
 
 // Track all messages and trigger "Распизделись" at 20+ per hour

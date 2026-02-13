@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   bot.start({
     onStart: (botInfo) => {
       console.log(`Bot @${botInfo.username} is running!`);
-      console.log('Commands: /add, /task, /done');
+      console.log('Commands: /add, /task, /done, /demo');
     },
   });
 }

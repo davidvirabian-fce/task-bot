@@ -37,6 +37,28 @@ export function initDatabase(): void {
       count INTEGER DEFAULT 0,
       PRIMARY KEY (chat_id, hour_key)
     );
+
+    CREATE TABLE IF NOT EXISTS demo_polls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id INTEGER NOT NULL,
+      poll_id TEXT NOT NULL UNIQUE,
+      created_by INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_demo_polls_poll_id ON demo_polls(poll_id);
+    CREATE INDEX IF NOT EXISTS idx_demo_polls_chat_id ON demo_polls(chat_id);
+
+    CREATE TABLE IF NOT EXISTS demo_poll_answers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      poll_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      user_first_name TEXT,
+      user_username TEXT,
+      option_ids TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(poll_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_demo_answers_poll_id ON demo_poll_answers(poll_id);
   `);
 }
 
@@ -131,6 +153,37 @@ export function cleanupOldMessageCounts(): void {
 
   const stmt = db.prepare(`DELETE FROM message_counts WHERE hour_key < ?`);
   stmt.run(cutoffKey);
+}
+
+export function saveDemoPoll(chatId: number, pollId: string, createdBy: number): void {
+  const stmt = db.prepare(`
+    INSERT INTO demo_polls (chat_id, poll_id, created_by) VALUES (?, ?, ?)
+  `);
+  stmt.run(chatId, pollId, createdBy);
+}
+
+export function saveDemoPollAnswer(
+  pollId: string,
+  userId: number,
+  firstName: string,
+  username: string,
+  optionIds: number[]
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO demo_poll_answers (poll_id, user_id, user_first_name, user_username, option_ids)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(poll_id, user_id) DO UPDATE SET
+      option_ids = excluded.option_ids,
+      user_first_name = excluded.user_first_name,
+      user_username = excluded.user_username,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+  stmt.run(pollId, userId, firstName, username, JSON.stringify(optionIds));
+}
+
+export function isDemoPoll(pollId: string): boolean {
+  const stmt = db.prepare(`SELECT 1 FROM demo_polls WHERE poll_id = ?`);
+  return !!stmt.get(pollId);
 }
 
 export function closeDatabase(): void {
